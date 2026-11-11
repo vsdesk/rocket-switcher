@@ -43,39 +43,23 @@ jobs:
       - name: Run tests
         run: ctest --test-dir build --output-on-failure -V
 
-  # ---- Core tests on the platforms that do not build the Linux daemon ----
+  # ---- Core tests on macOS. The Linux daemon is not built here. ----
   core-tests:
-    name: Core tests (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [windows-latest, macos-latest]
+    name: Core tests (macos-latest)
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v5
 
       - name: Configure, build, test
-        shell: bash
         run: |
-          set -euo pipefail
-          if [ "$RUNNER_OS" = "Windows" ]; then
-            cmake -B build \
-              -DBUILD_TESTING=ON \
-              -DBUILD_GUI=OFF \
-              -DBUILD_DAEMON=OFF \
-              -DBUILD_FCITX=OFF
-            cmake --build build --config Debug
-            ctest --test-dir build -C Debug --output-on-failure
-          else
-            cmake -B build \
-              -DCMAKE_BUILD_TYPE=Debug \
-              -DBUILD_TESTING=ON \
-              -DBUILD_GUI=OFF \
-              -DBUILD_DAEMON=OFF \
-              -DBUILD_FCITX=OFF
-            cmake --build build -j"$(sysctl -n hw.ncpu)"
-            ctest --test-dir build --output-on-failure
-          fi
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DBUILD_TESTING=ON \
+            -DBUILD_GUI=OFF \
+            -DBUILD_DAEMON=OFF \
+            -DBUILD_FCITX=OFF
+          cmake --build build -j"$(sysctl -n hw.ncpu)"
+          ctest --test-dir build --output-on-failure
 
   # ---- Build .deb (Ubuntu 24.04, native — после каждого пуша) ----
   build-deb:
@@ -126,45 +110,6 @@ jobs:
         with:
           name: rocket-switcher-rpm
           path: dist/*.rpm
-          retention-days: 30
-
-  # ---- Windows settings app (the evdev daemon is not part of this package) ----
-  build-windows:
-    name: Build Windows
-    runs-on: windows-latest
-    needs: [unit-tests, core-tests]
-    steps:
-      - uses: actions/checkout@v5
-
-      - name: Install Qt
-        uses: jurplel/install-qt-action@v4
-        with:
-          version: "6.8.3"
-          host: windows
-          target: desktop
-          arch: win64_msvc2022_64
-          archives: qtbase qttools
-          cache: true
-
-      - name: Configure
-        run: cmake -B build -DCMAKE_PREFIX_PATH="$env:QT_ROOT_DIR" -DBUILD_TESTING=OFF -DBUILD_FCITX=OFF -DBUILD_DAEMON=OFF
-
-      - name: Build
-        run: cmake --build build --config Release
-
-      - name: Install Inno Setup
-        run: choco install innosetup --no-progress -y
-
-      - name: Package zip and installer
-        run: powershell -ExecutionPolicy Bypass -File scripts/package-windows.ps1
-
-      - name: Upload Windows artefacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: rocket-switcher-windows
-          path: |
-            dist/*.zip
-            dist/*.exe
           retention-days: 30
 
   # ---- macOS app. Zip and dmg always go to the release. Signing runs when Apple secrets exist. ----
@@ -234,7 +179,7 @@ jobs:
   release:
     name: Create GitHub Release
     runs-on: ubuntu-24.04
-    needs: [build-deb, build-rpm, build-windows, build-macos]
+    needs: [build-deb, build-rpm, build-macos]
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
       - uses: actions/download-artifact@v4
@@ -245,11 +190,6 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: rocket-switcher-rpm
-          path: dist/
-
-      - uses: actions/download-artifact@v4
-        with:
-          name: rocket-switcher-windows
           path: dist/
 
       - uses: actions/download-artifact@v4

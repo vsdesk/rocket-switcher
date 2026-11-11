@@ -326,12 +326,11 @@ uinput и от `wtype` не зависит. Вставка выделения и
 ## Сборка в GitHub
 
 `.github/workflows/build-packages.yml` на push и pull request гоняет тесты
-ядра на Ubuntu, Windows и macOS, затем собирает пакеты. Номер везде один:
+ядра на Ubuntu и macOS, затем собирает пакеты. Номер везде один:
 первая строка `packaging/deb/changelog` (`1.0.0-140` и дальше), не имя тега.
 Тег `v*` ставят на коммит с нужной первой строкой changelog.
 
 | Система | Где собирается | Что попадает в релиз |
 |---------|----------------|----------------------|
 | Linux | Ubuntu 24.04 и Docker Fedora 41 | `.deb` и `.rpm`, демон evdev и окно настроек |
-| Windows | `windows-latest` | zip и установщик: окно настроек, словари, Qt. Демона evdev в них нет |
 | macOS | `macos-latest` | zip и dmg. Подпись и нотаризация запускаются, только если в секретах есть `APPLE_CERTIFICATE_BASE64`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_NOTARY_KEY`, `APPLE_NOTARY_KEY_ID`, `APPLE_NOTARY_ISSUER`. Без них в релиз всё равно попадает собранный пакет |
