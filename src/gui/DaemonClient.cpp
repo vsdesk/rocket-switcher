@@ -1,5 +1,7 @@
 #include "DaemonClient.h"
 
+#if defined(__linux__)
+
 #include "../core/DaemonEndpoint.h"
 
 #include <cerrno>
@@ -82,3 +84,11 @@ QString daemonCommand(const QString& command) {
     QString reply = QString::fromUtf8(buf).trimmed();
     return reply;
 }
+
+#else
+
+QString daemonCommand(const QString&) {
+    return {};
+}
+
+#endif

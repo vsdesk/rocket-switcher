@@ -1,4 +1,3 @@
-find_package(GTest REQUIRED)
 include(GoogleTest)
 
 add_executable(punto-tests

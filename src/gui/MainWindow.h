@@ -14,6 +14,7 @@
 #include "HotkeyEditor.h"
 
 class QAction;
+class QLocalServer;
 class QSocketNotifier;
 class QCloseEvent;
 class QShowEvent;
@@ -83,6 +84,7 @@ private:
     QAction*         trayAuto_ = nullptr;
     int              instanceFd_ = -1;
     QSocketNotifier* instanceNotifier_ = nullptr;
+    QLocalServer*    instanceServer_ = nullptr;
 
     // Debug tab (Fcitx5 build only)
     QComboBox* logLevel_ = nullptr;

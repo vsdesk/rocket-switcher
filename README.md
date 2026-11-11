@@ -258,6 +258,7 @@ src/gui/           окно настроек и значок трея
 data/dict/         en.txt и ru.txt
 packaging/deb/     changelog, control, установка службы и автозапуска
 packaging/rpm/     rocket-switcher.spec
+packaging/windows/ установщик Inno Setup (окно настроек, без демона evdev)
 docker/Dockerfile.rpm
 scripts/build-deb.sh
 ```
@@ -324,8 +325,13 @@ uinput и от `wtype` не зависит. Вставка выделения и
 
 ## Сборка в GitHub
 
-`.github/workflows/build-packages.yml` на push и pull request гоняет тесты,
-затем `.deb` на Ubuntu 24.04 и `.rpm` в Docker Fedora 41. Тег `v*` публикует
-оба пакета в GitHub Release. Номер пакета — ревизия из changelog
-(`1.0.0-140` и дальше), не имя тега само по себе. Тег ставят на коммит с
-нужной первой строкой changelog.
+`.github/workflows/build-packages.yml` на push и pull request гоняет тесты
+ядра на Ubuntu, Windows и macOS, затем собирает пакеты. Номер везде один:
+первая строка `packaging/deb/changelog` (`1.0.0-140` и дальше), не имя тега.
+Тег `v*` ставят на коммит с нужной первой строкой changelog.
+
+| Система | Где собирается | Что попадает в релиз |
+|---------|----------------|----------------------|
+| Linux | Ubuntu 24.04 и Docker Fedora 41 | `.deb` и `.rpm`, демон evdev и окно настроек |
+| Windows | `windows-latest` | zip и установщик: окно настроек, словари, Qt. Демона evdev в них нет |
+| macOS | `macos-latest` | zip с `.app` лежит в артефактах сборки. В релиз он попадает после подписи, когда в секретах репозитория есть `APPLE_CERTIFICATE_BASE64`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_NOTARY_KEY`, `APPLE_NOTARY_KEY_ID`, `APPLE_NOTARY_ISSUER` |

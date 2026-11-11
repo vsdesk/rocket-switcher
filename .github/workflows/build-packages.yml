@@ -14,7 +14,7 @@ on:
     branches: [main, master]
 
 jobs:
-  # ---- Unit Tests (Ubuntu) ----
+  # ---- Unit tests and the Linux GUI (Ubuntu) ----
   unit-tests:
     name: Unit Tests
     runs-on: ubuntu-24.04
@@ -42,6 +42,40 @@ jobs:
 
       - name: Run tests
         run: ctest --test-dir build --output-on-failure -V
+
+  # ---- Core tests on the platforms that do not build the Linux daemon ----
+  core-tests:
+    name: Core tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Configure, build, test
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            cmake -B build \
+              -DBUILD_TESTING=ON \
+              -DBUILD_GUI=OFF \
+              -DBUILD_DAEMON=OFF \
+              -DBUILD_FCITX=OFF
+            cmake --build build --config Debug
+            ctest --test-dir build -C Debug --output-on-failure
+          else
+            cmake -B build \
+              -DCMAKE_BUILD_TYPE=Debug \
+              -DBUILD_TESTING=ON \
+              -DBUILD_GUI=OFF \
+              -DBUILD_DAEMON=OFF \
+              -DBUILD_FCITX=OFF
+            cmake --build build -j"$(sysctl -n hw.ncpu)"
+            ctest --test-dir build --output-on-failure
+          fi
 
   # ---- Build .deb (Ubuntu 24.04, native — после каждого пуша) ----
   build-deb:
@@ -94,11 +128,116 @@ jobs:
           path: dist/*.rpm
           retention-days: 30
 
+  # ---- Windows settings app (the evdev daemon is not part of this package) ----
+  build-windows:
+    name: Build Windows
+    runs-on: windows-latest
+    needs: [unit-tests, core-tests]
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.8.3"
+          host: windows
+          target: desktop
+          arch: win64_msvc2022_64
+          archives: qtbase qttools
+          cache: true
+
+      - name: Configure
+        run: cmake -B build -DCMAKE_PREFIX_PATH="$env:QT_ROOT_DIR" -DBUILD_TESTING=OFF -DBUILD_FCITX=OFF -DBUILD_DAEMON=OFF
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Package zip and installer
+        run: powershell -ExecutionPolicy Bypass -File scripts/package-windows.ps1
+
+      - name: Upload Windows artefacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: rocket-switcher-windows
+          path: |
+            dist/*.zip
+            dist/*.exe
+          retention-days: 30
+
+  # ---- macOS settings app. A signed zip is published only when Apple secrets exist. ----
+  build-macos:
+    name: Build macOS
+    runs-on: macos-latest
+    needs: [unit-tests, core-tests]
+    outputs:
+      signed: ${{ steps.mark.outputs.signed }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.8.3"
+          host: mac
+          target: desktop
+          arch: clang_64
+          archives: qtbase qttools
+          cache: true
+
+      - name: Configure
+        run: |
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR" \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0 \
+            -DBUILD_TESTING=OFF \
+            -DBUILD_FCITX=OFF \
+            -DBUILD_DAEMON=OFF
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Package zip
+        run: |
+          chmod +x scripts/package-macos.sh scripts/macos-sign.sh
+          ./scripts/package-macos.sh
+
+      - name: Sign and notarize
+        id: sign
+        if: ${{ success() && secrets.APPLE_CERTIFICATE_BASE64 != '' }}
+        env:
+          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_NOTARY_KEY: ${{ secrets.APPLE_NOTARY_KEY }}
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_NOTARY_ISSUER: ${{ secrets.APPLE_NOTARY_ISSUER }}
+        run: |
+          ver="$(sed -n 's/.*(\([^)]*\)).*/\1/p' packaging/deb/changelog | head -n 1)"
+          ./scripts/macos-sign.sh \
+            build/src/gui/rocket-switcher-config.app \
+            "dist/rocket-switcher_${ver}_macos.zip"
+
+      - name: Mark signed zip
+        id: mark
+        if: ${{ success() && steps.sign.outcome == 'success' }}
+        run: echo "signed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Upload macOS artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rocket-switcher-macos
+          path: dist/*.zip
+          retention-days: 30
+
   # ---- Release (on tag) ----
   release:
     name: Create GitHub Release
     runs-on: ubuntu-24.04
-    needs: [build-deb, build-rpm]
+    needs: [build-deb, build-rpm, build-windows, build-macos]
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
       - uses: actions/download-artifact@v4
@@ -109,6 +248,17 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: rocket-switcher-rpm
+          path: dist/
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: rocket-switcher-windows
+          path: dist/
+
+      - uses: actions/download-artifact@v4
+        if: needs.build-macos.outputs.signed == 'true'
+        with:
+          name: rocket-switcher-macos
           path: dist/
 
       - name: Create Release

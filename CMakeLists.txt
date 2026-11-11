@@ -22,10 +22,15 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
 
-# Hardening flags for Release builds
-if(CMAKE_BUILD_TYPE STREQUAL "Release")
+# Hardening flags for Release builds (GCC on Linux).
+if(CMAKE_BUILD_TYPE STREQUAL "Release" AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     add_compile_options(-O2 -D_FORTIFY_SOURCE=2 -fstack-protector-strong)
     add_link_options(-Wl,-z,relro,-z,now)
+endif()
+
+# Russian and English literals are UTF-8. MSVC does not assume that.
+if(MSVC)
+    add_compile_options(/utf-8)
 endif()
 
 # ---------------------------------------------------------------------------
@@ -41,7 +46,11 @@ find_package(ECM QUIET)  # KDE Extra CMake Modules (optional, for FindFcitx5)
 # Submodules
 # ---------------------------------------------------------------------------
 option(BUILD_FCITX "Build Fcitx5 input method module (optional)" OFF)
-option(BUILD_DAEMON "Build standalone evdev/uinput daemon" ON)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    option(BUILD_DAEMON "Build standalone evdev/uinput daemon" ON)
+else()
+    option(BUILD_DAEMON "Build standalone evdev/uinput daemon" OFF)
+endif()
 option(BUILD_GUI "Build Qt settings (rocket-switcher-config)" ON)
 
 add_subdirectory(src/core)
@@ -55,7 +64,11 @@ if(BUILD_GUI)
 endif()
 
 if(BUILD_DAEMON)
-    add_subdirectory(src/daemon)
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        add_subdirectory(src/daemon)
+    else()
+        message(STATUS "rocket-switcher-daemon is Linux-only — skipping")
+    endif()
 endif()
 # Note: src/daemon/CMakeLists.txt no-ops if libevdev/xkbcommon are unavailable.
 
@@ -73,6 +86,29 @@ endif()
 include(CTest)
 if(BUILD_TESTING)
     enable_testing()
+    find_package(GTest QUIET)
+    if(NOT TARGET GTest::gtest)
+        include(FetchContent)
+        set(BUILD_GMOCK OFF CACHE BOOL "" FORCE)
+        set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
+        set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+        if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.24")
+            FetchContent_Declare(
+                googletest
+                URL https://github.com/google/googletest/archive/refs/tags/v1.15.2.tar.gz
+                DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+            )
+        else()
+            FetchContent_Declare(
+                googletest
+                URL https://github.com/google/googletest/archive/refs/tags/v1.15.2.tar.gz
+            )
+        endif()
+        FetchContent_MakeAvailable(googletest)
+    endif()
+    if(NOT TARGET GTest::gtest)
+        message(FATAL_ERROR "GTest was not found and could not be downloaded")
+    endif()
     add_subdirectory(tests)
 endif()
 

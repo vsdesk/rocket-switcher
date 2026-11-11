@@ -25,8 +25,6 @@
 #include <QCloseEvent>
 #include <QShowEvent>
 #include <QSignalBlocker>
-#include <QDBusConnection>
-#include <QDBusMessage>
 #include "DaemonClient.h"
 #include "TypoCorrector.h"
 
@@ -35,12 +33,19 @@
 #include <cstdlib>
 #include <cstring>
 
+#if defined(__linux__)
+#include <QDBusConnection>
+#include <QDBusMessage>
 #include <fcntl.h>
 #include <poll.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/un.h>
 #include <unistd.h>
+#else
+#include <QLocalServer>
+#include <QLocalSocket>
+#endif
 
 #ifndef PUNTO_WITH_FCITX
 #error "PUNTO_WITH_FCITX must be defined by CMake (0 or 1)"
@@ -56,6 +61,7 @@ static const double DEFAULT_CONFIDENCE    = 0.15;
 
 namespace {
 
+#if defined(__linux__)
 std::string instanceSocketPath() {
     const char* rt = std::getenv("XDG_RUNTIME_DIR");
     if (rt && rt[0])
@@ -115,6 +121,18 @@ bool notifyExistingInstance() {
     buf[n] = '\0';
     return std::strncmp(buf, "OK", 2) == 0;
 }
+#else
+constexpr auto kInstanceName = "rocket-switcher-config";
+
+bool notifyExistingInstance() {
+    QLocalSocket sock;
+    sock.connectToServer(QString::fromLatin1(kInstanceName));
+    if (!sock.waitForConnected(300)) return false;
+    sock.write("SHOW\n");
+    if (!sock.waitForBytesWritten(300) || !sock.waitForReadyRead(300)) return false;
+    return sock.readAll().startsWith("OK");
+}
+#endif
 
 // Rounded square the size of the other tray glyphs. The fill is the status:
 // green when auto-switch is on, red when it is off, gray when the daemon
@@ -185,6 +203,7 @@ QString layoutLabel() {
         }
     }
 
+#if defined(__linux__)
     QDBusMessage msg = QDBusMessage::createMethodCall(
         QStringLiteral("org.kde.keyboard"), QStringLiteral("/Layouts"),
         QStringLiteral("org.kde.KeyboardLayouts"), QStringLiteral("getLayout"));
@@ -194,6 +213,10 @@ QString layoutLabel() {
     const int idx = reply.arguments().at(0).toInt();
     if (ru >= 0 && idx == ru) cached = QStringLiteral("Ру");
     else if (en >= 0 && idx == en) cached = QStringLiteral("En");
+#else
+    (void)en;
+    (void)ru;
+#endif
     return cached;
 }
 
@@ -211,17 +234,22 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
 }
 
 MainWindow::~MainWindow() {
+#if defined(__linux__)
     if (instanceNotifier_) instanceNotifier_->setEnabled(false);
     if (instanceFd_ >= 0) {
         ::close(instanceFd_);
         instanceFd_ = -1;
         ::unlink(instanceSocketPath().c_str());
     }
+#else
+    if (instanceServer_) instanceServer_->close();
+#endif
 }
 
 bool MainWindow::takeSingleInstance() {
     if (notifyExistingInstance()) return false;
 
+#if defined(__linux__)
     const std::string path = instanceSocketPath();
     ::unlink(path.c_str());
     const int fd = ::socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0);
@@ -242,9 +270,20 @@ bool MainWindow::takeSingleInstance() {
     instanceNotifier_ = new QSocketNotifier(fd, QSocketNotifier::Read, this);
     connect(instanceNotifier_, &QSocketNotifier::activated, this, &MainWindow::onInstanceReady);
     return true;
+#else
+    instanceServer_ = new QLocalServer(this);
+    QLocalServer::removeServer(QString::fromLatin1(kInstanceName));
+    if (!instanceServer_->listen(QString::fromLatin1(kInstanceName))) {
+        if (notifyExistingInstance()) return false;
+        return true;
+    }
+    connect(instanceServer_, &QLocalServer::newConnection, this, &MainWindow::onInstanceReady);
+    return true;
+#endif
 }
 
 void MainWindow::onInstanceReady() {
+#if defined(__linux__)
     if (instanceFd_ < 0) return;
     for (;;) {
         const int client = ::accept4(instanceFd_, nullptr, nullptr, SOCK_CLOEXEC | SOCK_NONBLOCK);
@@ -260,6 +299,22 @@ void MainWindow::onInstanceReady() {
             activateWindow();
         }
     }
+#else
+    if (!instanceServer_) return;
+    while (QLocalSocket* client = instanceServer_->nextPendingConnection()) {
+        client->waitForReadyRead(200);
+        const QByteArray buf = client->readAll();
+        client->write("OK\n");
+        client->flush();
+        client->disconnectFromServer();
+        client->deleteLater();
+        if (!buf.isEmpty()) {
+            show();
+            raise();
+            activateWindow();
+        }
+    }
+#endif
 }
 
 #if PUNTO_WITH_FCITX
@@ -395,6 +450,7 @@ void MainWindow::buildUI() {
            "Нужно, если клавиши пропадают или залипают. То же, что passthrough=true в daemon.ini."));
     daemonLayout->addWidget(daemonPassthrough_);
 
+#if defined(__linux__)
     daemonInjectPasteFirst_ = new QCheckBox(
         tr("Wayland: сначала вставка из буфера, потом wtype (KDE / Plasma)"), this);
     daemonInjectPasteFirst_->setToolTip(
@@ -407,6 +463,11 @@ void MainWindow::buildUI() {
     auto* daemonNote = new QLabel(
         tr("<small><i>Обычный режим оставляет переключение. Прозрачный режим — чтобы проверить, "
            "не мешает ли композитор или uinput. После сохранения служба перезапускается.</i></small>"));
+#else
+    auto* daemonNote = new QLabel(
+        tr("<small><i>Настройки общие с версией для Linux. Перехват клавиатуры "
+           "в сборке для этой системы ещё не включён.</i></small>"));
+#endif
     daemonNote->setWordWrap(true);
     daemonLayout->addWidget(daemonNote);
     daemonLayout->addStretch();
@@ -537,10 +598,16 @@ void MainWindow::buildUI() {
         tr("<small>Журнал пишется в journald и ~/.local/share/fcitx5/logs/.<br>"
            "После смены уровня Fcitx5 перезагружается.</small>"));
 #else
+#if defined(__linux__)
     auto* dbgNote = new QLabel(
         tr("<small>Если демон запущен из терминала, диагностика идёт в stderr.<br>"
            "После сохранения делается попытка перезапуска: <code>systemctl --user restart "
            "rocket-switcher-daemon</code>.</small>"));
+#else
+    auto* dbgNote = new QLabel(
+        tr("<small>Файл настроек тот же, что у версии для Linux: "
+           "<code>daemon.ini</code> в каталоге конфигурации.</small>"));
+#endif
 #endif
     dbgNote->setWordWrap(true);
     dbgLayout->addRow(dbgNote);
@@ -717,12 +784,17 @@ void MainWindow::onSave() {
     statusBar()->showMessage(tr("Настройки сохранены, Fcitx5 перезагружается."), 3000);
 #else
     const QString reloaded = daemonCommand(QStringLiteral("RELOAD"));
+#if defined(__linux__)
     QProcess::startDetached("systemctl", {"--user", "try-restart", "rocket-switcher-daemon"});
     statusBar()->showMessage(
         reloaded == QLatin1String("OK")
             ? tr("Настройки сохранены. Список исключений уже у демона, служба перезапускается.")
             : tr("Настройки сохранены, служба перезапускается."),
         4000);
+#else
+    (void)reloaded;
+    statusBar()->showMessage(tr("Настройки сохранены."), 3000);
+#endif
 #endif
 }
 
@@ -918,7 +990,11 @@ void MainWindow::onAbout() {
 #if PUNTO_WITH_FCITX
            "Автоисправление раскладки ru↔en (модуль Fcitx5).<br><br>"
 #else
+#if defined(__linux__)
            "Автоисправление раскладки ru↔en (демон evdev, без Fcitx5).<br><br>"
+#else
+           "Автоисправление раскладки ru↔en.<br><br>"
+#endif
 #endif
            "Лицензия: GPL-2.0+<br>"
            "Исходный код: https://github.com/vsdesk/rocket-switcher"));
