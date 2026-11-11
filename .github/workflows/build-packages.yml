@@ -204,8 +204,6 @@ jobs:
           ./scripts/package-macos.sh
 
       - name: Sign and notarize
-        id: sign
-        if: ${{ success() && secrets.APPLE_CERTIFICATE_BASE64 != '' }}
         env:
           APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -214,6 +212,10 @@ jobs:
           APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
           APPLE_NOTARY_ISSUER: ${{ secrets.APPLE_NOTARY_ISSUER }}
         run: |
+          if [ -z "${APPLE_CERTIFICATE_BASE64}" ]; then
+            echo "No Apple signing certificate; publishing the unsigned zip and dmg"
+            exit 0
+          fi
           ver="$(sed -n 's/.*(\([^)]*\)).*/\1/p' packaging/deb/changelog | head -n 1)"
           ./scripts/macos-sign.sh \
             build/src/gui/rocket-switcher-config.app \
