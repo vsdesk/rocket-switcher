@@ -68,23 +68,29 @@ if(APPLE)
     target_sources(rocket-switcher-config PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/rocket-switcher.icns")
 
-    # Qt 6.8 still links -framework AGL; Xcode 26+ SDKs no longer ship it.
-    # find_library can still see /System/Library/Frameworks/AGL.framework on
-    # the live OS, but the linker uses CMAKE_OSX_SYSROOT and fails there.
-    set(_agl_in_sdk "${CMAKE_OSX_SYSROOT}/System/Library/Frameworks/AGL.framework")
-    if(NOT EXISTS "${_agl_in_sdk}")
+    # Qt 6.8 still links -framework AGL. Xcode 26+ SDKs no longer ship it.
+    # An empty CMAKE_OSX_SYSROOT makes a plain EXISTS check hit the copy in
+    # /System/Library, which the linker will not use.
+    set(_agl_sdk "${CMAKE_OSX_SYSROOT}")
+    if(_agl_sdk STREQUAL "" OR _agl_sdk STREQUAL "macosx")
+        execute_process(
+            COMMAND xcrun --sdk macosx --show-sdk-path
+            OUTPUT_VARIABLE _agl_sdk
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            COMMAND_ERROR_IS_FATAL ANY
+        )
+    endif()
+    set(_agl_fw_dir "${_agl_sdk}/System/Library/Frameworks/AGL.framework")
+    if(NOT EXISTS "${_agl_fw_dir}/AGL" AND NOT EXISTS "${_agl_fw_dir}/AGL.tbd")
         set(_agl_stub_root "${CMAKE_BINARY_DIR}/stubs")
         set(_agl_fw "${_agl_stub_root}/AGL.framework")
         if(NOT EXISTS "${_agl_fw}/AGL")
             file(MAKE_DIRECTORY "${_agl_fw}")
             set(_agl_src "${CMAKE_BINARY_DIR}/agl_stub.c")
             file(WRITE "${_agl_src}" "void rocket_switcher_agl_stub(void) {}\n")
-            set(_agl_isysroot)
-            if(CMAKE_OSX_SYSROOT)
-                list(APPEND _agl_isysroot -isysroot "${CMAKE_OSX_SYSROOT}")
-            endif()
             execute_process(
-                COMMAND "${CMAKE_CXX_COMPILER}" ${_agl_isysroot}
+                COMMAND "${CMAKE_CXX_COMPILER}"
+                    -isysroot "${_agl_sdk}"
                     -x c -dynamiclib "${_agl_src}"
                     -o "${_agl_fw}/AGL"
                     -install_name "/System/Library/Frameworks/AGL.framework/AGL"
