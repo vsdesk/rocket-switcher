@@ -43,7 +43,7 @@ cmake --build build
 ./scripts/package-macos.sh
 ```
 
-`scripts/macos-sign.sh` не запускать, пока пользователь сам не дал сертификат и ключ нотаризации. Отдать путь `dist/rocket-switcher_*_macos.zip`.
+`scripts/macos-sign.sh` не запускать, пока пользователь сам не дал сертификат и ключ нотаризации. Отдать путь `dist/rocket-switcher_*_macos.dmg` (рядом лежит такой же zip). В релиз GitHub по тегу `v*` попадают оба файла, даже без подписи.
 
 Пакет в PowerShell (Inno Setup 6 установлен):
 

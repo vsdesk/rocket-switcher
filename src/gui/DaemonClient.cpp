@@ -85,6 +85,14 @@ QString daemonCommand(const QString& command) {
     return reply;
 }
 
+#elif defined(Q_OS_MACOS) || defined(Q_OS_WIN)
+
+#include "SwitchEngine.h"
+
+QString daemonCommand(const QString& command) {
+    return SwitchEngine::instance().command(command);
+}
+
 #else
 
 QString daemonCommand(const QString&) {

@@ -1,4 +1,7 @@
 #include "MainWindow.h"
+#if defined(Q_OS_MACOS) || defined(Q_OS_WIN)
+#include "SwitchEngine.h"
+#endif
 
 #include <QApplication>
 #include <QVBoxLayout>
@@ -156,7 +159,13 @@ QIcon markIcon(bool on, bool alive, const QString& label = QStringLiteral("Р"))
             p.setBrush(bg);
             p.drawRoundedRect(box, box.width() * 0.22, box.height() * 0.22);
             p.setPen(Qt::white);
+#if defined(Q_OS_MACOS)
+            QFont font(QStringLiteral("Helvetica Neue"));
+#elif defined(Q_OS_WIN)
+            QFont font(QStringLiteral("Segoe UI"));
+#else
             QFont font(QStringLiteral("Noto Sans"));
+#endif
             font.setWeight(QFont::Bold);
             const bool two = label.size() > 1;
             int px = qRound(box.height() * (two ? 0.56 : 0.72));
@@ -216,6 +225,10 @@ QString layoutLabel() {
 #else
     (void)en;
     (void)ru;
+#if defined(Q_OS_MACOS) || defined(Q_OS_WIN)
+    const QString live = SwitchEngine::instance().layoutLabel();
+    if (!live.isEmpty()) cached = live;
+#endif
 #endif
     return cached;
 }
@@ -927,7 +940,11 @@ void MainWindow::refreshTray() {
     }
     trayIcon_->setIcon(markIcon(on, alive, layout));
     if (!alive)
+#if defined(Q_OS_MACOS) || defined(Q_OS_WIN)
+        trayIcon_->setToolTip(tr("Ракета: нет доступа к клавиатуре. Разрешите управление компьютером в настройках системы."));
+#else
         trayIcon_->setToolTip(tr("Ракета: %1, демон не запущен").arg(layout));
+#endif
     else if (on)
         trayIcon_->setToolTip(tr("Ракета: %1, автопереключение включено").arg(layout));
     else
@@ -945,6 +962,9 @@ void MainWindow::closeEvent(QCloseEvent* event) {
 
 void MainWindow::showEvent(QShowEvent* event) {
     QMainWindow::showEvent(event);
+#if defined(Q_OS_MACOS) || defined(Q_OS_WIN)
+    SwitchEngine::instance().activateApp();
+#endif
 #if !PUNTO_WITH_FCITX
     const QString reply = daemonCommand(QStringLiteral("STATUS"));
     if (autoEnabled_ && (reply == QLatin1String("AUTO 1") || reply == QLatin1String("AUTO 0")))

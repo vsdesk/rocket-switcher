@@ -1,6 +1,7 @@
 # CMake / local build trees
 /_build/
 /build/
+/build-tests/
 
 # dpkg-buildpackage / script output
 /_dist/

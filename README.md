@@ -334,4 +334,4 @@ uinput и от `wtype` не зависит. Вставка выделения и
 |---------|----------------|----------------------|
 | Linux | Ubuntu 24.04 и Docker Fedora 41 | `.deb` и `.rpm`, демон evdev и окно настроек |
 | Windows | `windows-latest` | zip и установщик: окно настроек, словари, Qt. Демона evdev в них нет |
-| macOS | `macos-latest` | zip с `.app` лежит в артефактах сборки. В релиз он попадает после подписи, когда в секретах репозитория есть `APPLE_CERTIFICATE_BASE64`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_NOTARY_KEY`, `APPLE_NOTARY_KEY_ID`, `APPLE_NOTARY_ISSUER` |
+| macOS | `macos-latest` | zip и dmg. Подпись и нотаризация запускаются, только если в секретах есть `APPLE_CERTIFICATE_BASE64`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_NOTARY_KEY`, `APPLE_NOTARY_KEY_ID`, `APPLE_NOTARY_ISSUER`. Без них в релиз всё равно попадает собранный пакет |

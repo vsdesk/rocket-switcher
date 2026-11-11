@@ -4,6 +4,7 @@ add_library(punto-core STATIC
     AutoSwitchHeuristic.cpp
     WordDictionary.cpp
     TypoCorrector.cpp
+    LayoutSession.cpp
 )
 
 target_include_directories(punto-core

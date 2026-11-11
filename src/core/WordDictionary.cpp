@@ -9,6 +9,15 @@
 #include <unordered_set>
 #include <vector>
 
+#if defined(__APPLE__)
+#include <mach-o/dyld.h>
+#elif defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#endif
+
 namespace punto {
 
 namespace {
@@ -120,6 +129,26 @@ Bags loadBags() {
     loadDir("data/dict", bags);
     loadDir("../data/dict", bags);
     loadDir("../../data/dict", bags);
+#if defined(__APPLE__)
+    {
+        char buf[4096];
+        uint32_t sz = sizeof(buf);
+        if (_NSGetExecutablePath(buf, &sz) == 0) {
+            std::error_code ec;
+            std::filesystem::path exe = std::filesystem::weakly_canonical(buf, ec);
+            if (ec) exe = buf;
+            loadDir(exe.parent_path().parent_path() / "Resources" / "dict", bags);
+            loadDir(exe.parent_path() / "dict", bags);
+        }
+    }
+#elif defined(_WIN32)
+    {
+        wchar_t buf[MAX_PATH];
+        const DWORD n = GetModuleFileNameW(nullptr, buf, MAX_PATH);
+        if (n > 0 && n < MAX_PATH)
+            loadDir(std::filesystem::path(buf).parent_path() / "dict", bags);
+    }
+#endif
     const std::string home = homeDir();
     if (!home.empty()) {
         loadDir(std::filesystem::path(home) / ".config/rocket-switcher/dict", bags);

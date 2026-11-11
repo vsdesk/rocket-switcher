@@ -27,8 +27,22 @@ mkdir -p "$APP/Contents/Resources/dict" "$APP/Contents/Resources/sounds"
 cp "$ROOT/data/dict/en.txt" "$ROOT/data/dict/ru.txt" "$APP/Contents/Resources/dict/"
 cp "$ROOT/data/sounds/switch.wav" "$APP/Contents/Resources/sounds/"
 
+# Ad-hoc sign after bundling Qt and resources so Apple Silicon will launch
+# a local unsigned build. Real identity/notarization is macos-sign.sh.
+codesign --force --deep --sign - "$APP"
+
 mkdir -p "$ROOT/dist"
 OUT="$ROOT/dist/rocket-switcher_${VER}_macos.zip"
 rm -f "$OUT"
 ditto -c -k --keepParent "$APP" "$OUT"
 echo "Wrote $OUT"
+
+STAGE="$(mktemp -d "${TMPDIR:-/tmp}/rocket-switcher-dmg.XXXXXX")"
+cleanup() { rm -rf "$STAGE"; }
+trap cleanup EXIT
+cp -R "$APP" "$STAGE/Ракета.app"
+ln -s /Applications "$STAGE/Applications"
+DMG="$ROOT/dist/rocket-switcher_${VER}_macos.dmg"
+rm -f "$DMG"
+hdiutil create -volname "Ракета ${VER}" -srcfolder "$STAGE" -ov -format UDZO "$DMG"
+echo "Wrote $DMG"

@@ -167,13 +167,11 @@ jobs:
             dist/*.exe
           retention-days: 30
 
-  # ---- macOS settings app. A signed zip is published only when Apple secrets exist. ----
+  # ---- macOS app. Zip and dmg always go to the release. Signing runs when Apple secrets exist. ----
   build-macos:
     name: Build macOS
     runs-on: macos-latest
     needs: [unit-tests, core-tests]
-    outputs:
-      signed: ${{ steps.mark.outputs.signed }}
     steps:
       - uses: actions/checkout@v5
 
@@ -221,16 +219,13 @@ jobs:
             build/src/gui/rocket-switcher-config.app \
             "dist/rocket-switcher_${ver}_macos.zip"
 
-      - name: Mark signed zip
-        id: mark
-        if: ${{ success() && steps.sign.outcome == 'success' }}
-        run: echo "signed=true" >> "$GITHUB_OUTPUT"
-
       - name: Upload macOS artefact
         uses: actions/upload-artifact@v4
         with:
           name: rocket-switcher-macos
-          path: dist/*.zip
+          path: |
+            dist/*.zip
+            dist/*.dmg
           retention-days: 30
 
   # ---- Release (on tag) ----
@@ -256,7 +251,6 @@ jobs:
           path: dist/
 
       - uses: actions/download-artifact@v4
-        if: needs.build-macos.outputs.signed == 'true'
         with:
           name: rocket-switcher-macos
           path: dist/
