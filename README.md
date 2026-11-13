@@ -1,8 +1,14 @@
 # Ракета
 
-Автоисправление раскладки **ru↔en** на Linux/Wayland. Демон
-`rocket-switcher-daemon` читает клавиатуру через evdev и подставляет
-исправленное слово через uinput. Окно настроек — `rocket-switcher-config`.
+Автоисправление раскладки **ru↔en**. У каждой системы свой перехват
+клавиатуры, и собирается он только на ней.
+
+На Linux/Wayland это отдельный процесс `rocket-switcher-daemon`: он читает
+клавиши через evdev и подставляет слово через uinput. Окно настроек —
+`rocket-switcher-config`. На macOS и Windows отдельного процесса нет:
+перехват входит в `rocket-switcher-config` и компилируется вместе с окном,
+на macOS через доступ к событиям системы, на Windows через низкоуровневый
+хук. С Linux эти две сборки не собрать, и демон evdev не собрать на них.
 
 Пакет называется `rocket-switcher`. Старый пакет `punto-switcher` он
 заменяет. Если остался файл `~/.config/punto-switcher/daemon.ini`, демон его
@@ -10,8 +16,9 @@
 
 Репозиторий: https://github.com/vsdesk/rocket-switcher
 
-Демону нужен доступ к `/dev/input` и `/dev/uinput` (группа `input`). Без этого
-репозиторий не подходит.
+Демону на Linux нужен доступ к `/dev/input` и `/dev/uinput` (группа `input`).
+Без этого репозиторий не подходит. На macOS приложение один раз спрашивает
+доступ «Универсальный доступ»: без него перехват не ставится.
 
 ---
 
@@ -40,6 +47,11 @@ backspace и повторяет те же физические клавиши у
 
 Отмена возвращает только последнюю замену. Более ранние откатить нельзя:
 поле ввода чужое, и стирание затронуло бы уже набранный текст.
+
+Замена раскладки и исправление опечатки сопровождаются коротким звуком
+`switch.wav` (`/usr/share/rocket-switcher/sounds`). На вкладке
+«Автопереключение» его выключают (`sound=false`). Обычная смена раскладки
+в системе звук не включает.
 
 ---
 
@@ -122,8 +134,8 @@ backspace и повторяет те же физические клавиши у
 
 Меню приложений: **Ракета** (`rocket-switcher-config`).
 
-Вкладки: **Демон**, **Горячие клавиши**, **Автопереключение**, **Отладка**.
-Кнопки: **Сохранить**, **Закрыть**, **По умолчанию**.
+Вкладки: **Демон**, **Горячие клавиши**, **Автопереключение**, **Опечатки**,
+**Отладка**. Кнопки: **Сохранить**, **Закрыть**, **По умолчанию**.
 
 Конфиг:
 
@@ -144,6 +156,8 @@ undo=Alt+shift+BackSpace
 
 [autoswitch]
 enabled=true
+typo_correct=true
+sound=true
 min_word_length=3
 confidence_threshold=0.18
 min_plausible_dominant_bigram_score=0.42
@@ -244,23 +258,62 @@ docker run --rm -v "$PWD/dist:/dist" rocket-rpm-builder
 передать `--define "deb_upstream …"` и `--define "deb_revision …"`, как в
 `docker/Dockerfile.rpm`.
 
-Модуль Fcitx5 в обычной сборке выключен (`BUILD_FCITX=OFF`). Рабочий путь —
-демон.
+Модуль Fcitx5 в обычной сборке выключен (`BUILD_FCITX=OFF`). На Linux рабочий
+путь — демон evdev (`BUILD_DAEMON` по умолчанию включён). На macOS и Windows
+этот флаг выключают: цель `rocket-switcher-daemon` — только Linux, а перехват
+этих систем собирается внутри `rocket-switcher-config`.
+
+Окно и перехват для Windows собираются на Windows и в GitHub Actions не
+входят. Нужны Qt 6.8 (`qtbase` и `qttools`, в `CMAKE_PREFIX_PATH` корень Qt)
+и Inno Setup 6.
+
+```powershell
+cmake -B build -DCMAKE_PREFIX_PATH="$env:QT_ROOT_DIR" -DBUILD_TESTING=OFF -DBUILD_FCITX=OFF -DBUILD_DAEMON=OFF
+cmake --build build --config Release
+powershell -ExecutionPolicy Bypass -File scripts/package-windows.ps1
+```
+
+Скрипт пишет `dist/rocket-switcher_<версия>_windows-x64.zip`, затем
+установщик с тем же именем и суффиксом `.exe`. Без Inno Setup zip уже
+лежит в `dist/`, а скрипт завершается с ошибкой.
+
+Окно и перехват для macOS собираются на macOS тем же Qt 6.8. С Linux
+кросс-сборки нет: нужны SDK macOS и `macdeployqt`.
+
+```bash
+cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR" -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0 \
+  -DBUILD_TESTING=OFF -DBUILD_FCITX=OFF -DBUILD_DAEMON=OFF
+cmake --build build
+./scripts/package-macos.sh
+```
+
+Скрипт кладёт словари и звук в `.app`, подписывает его ad-hoc и пишет
+`dist/rocket-switcher_<версия>_macos.zip` и такой же `.dmg` (внутри образ
+называется «Ракета»). `scripts/macos-sign.sh` ставит сертификат разработчика
+и отправляет сборку на нотаризацию; для локального запуска он не нужен.
+
+Те же команды для агента лежат в `AGENTS.md`.
 
 ---
 
 ## Из чего состоит репозиторий
 
 ```
-src/core/          словарь, таблица JCUKEN, эвристика
-src/daemon/        evdev/uinput, раскладка KDE, сочетания
-src/gui/           окно настроек и значок трея
-data/dict/         en.txt и ru.txt
-packaging/deb/     changelog, control, установка службы и автозапуска
-packaging/rpm/     rocket-switcher.spec
-packaging/windows/ установщик Inno Setup (окно настроек, без демона evdev)
+src/core/                 словарь, таблица JCUKEN, эвристика, опечатки
+src/daemon/               демон Linux: evdev/uinput
+src/gui/                  окно настроек; MacSwitch и WinSwitch — перехват своих систем
+data/dict/                en.txt и ru.txt
+data/sounds/              switch.wav
+packaging/deb/            changelog, control, служба и автозапуск
+packaging/rpm/            rocket-switcher.spec
+packaging/windows/        установщик Inno Setup
+scripts/build-deb.sh      пакет .deb
+scripts/package-macos.sh  zip и dmg с .app
+scripts/package-windows.ps1  zip и установщик
+scripts/macos-sign.sh     подпись и нотаризация, не обычная сборка
+AGENTS.md                 команды сборки для агента
 docker/Dockerfile.rpm
-scripts/build-deb.sh
 ```
 
 ---
@@ -319,18 +372,24 @@ systemctl --user restart rocket-switcher-daemon.service
 uinput и от `wtype` не зависит. Вставка выделения использует буфер и
 `Ctrl+V`; в терминале, где это не срабатывает, остаётся набор клавишами.
 
-Сочетание, которое перехватывает система раньше демона, до Ракета не доходит.
+Сочетание, которое перехватывает система раньше программы, до Ракета не доходит.
+На macOS это же относится к полям с защищённым вводом. На Windows хук не видит
+окно, запущенное от администратора, если сама Ракета запущена как обычное
+приложение.
 
 ---
 
 ## Сборка в GitHub
 
 `.github/workflows/build-packages.yml` на push и pull request гоняет тесты
-ядра на Ubuntu и macOS, затем собирает пакеты. Номер везде один:
-первая строка `packaging/deb/changelog` (`1.0.0-140` и дальше), не имя тега.
-Тег `v*` ставят на коммит с нужной первой строкой changelog.
+на Ubuntu (ядро, окно и демон evdev) и тесты ядра на macOS, затем собирает
+пакеты. Демон Linux и перехват macOS собираются каждый на своей системе.
+Windows в этот workflow не входит: её пакет с хуком собирается локально.
+Номер везде один: первая строка `packaging/deb/changelog` (`1.0.0-140` и
+дальше), не имя тега. Тег `v*` ставят на коммит с нужной первой строкой
+changelog.
 
 | Система | Где собирается | Что попадает в релиз |
 |---------|----------------|----------------------|
-| Linux | Ubuntu 24.04 и Docker Fedora 41 | `.deb` и `.rpm`, демон evdev и окно настроек |
-| macOS | `macos-latest` | zip и dmg. Подпись и нотаризация запускаются, только если в секретах есть `APPLE_CERTIFICATE_BASE64`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_NOTARY_KEY`, `APPLE_NOTARY_KEY_ID`, `APPLE_NOTARY_ISSUER`. Без них в релиз всё равно попадает собранный пакет |
+| Linux | Ubuntu 24.04 и Docker Fedora 41 | `.deb` и `.rpm`: демон evdev и окно настроек |
+| macOS | `macos-latest` | `rocket-switcher_<версия>_macos.zip` и `.dmg`: окно настроек и перехват клавиатуры в одном `.app`, словари и звук. Подпись и нотаризация запускаются, только если заданы секреты `APPLE_CERTIFICATE_BASE64`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_NOTARY_KEY`, `APPLE_NOTARY_KEY_ID`, `APPLE_NOTARY_ISSUER`. Без них в релиз попадает та же пара файлов с ad-hoc подписью |

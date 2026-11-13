@@ -12,7 +12,7 @@
 
 ## macOS и Windows
 
-Не запускать `scripts/build-deb.sh`, `dpkg`, `rpmbuild` и Docker-сборку `.rpm`. Демон evdev не собирать: `-DBUILD_DAEMON=OFF -DBUILD_FCITX=OFF`.
+Не запускать `scripts/build-deb.sh`, `dpkg`, `rpmbuild` и Docker-сборку `.rpm`. Цель `rocket-switcher-daemon` — только Linux: `-DBUILD_DAEMON=OFF -DBUILD_FCITX=OFF`. Перехват macOS и Windows собирается внутри `rocket-switcher-config` на своей системе, отдельным флагом не включается.
 
 Qt 6.8, архивы `qtbase` и `qttools` (`macdeployqt` / `windeployqt`). Корень Qt передать в `CMAKE_PREFIX_PATH`. Если Qt нет и сеть есть, поставить его самому, не списком шагов для пользователя.
 
